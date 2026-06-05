@@ -133,20 +133,24 @@ const formatTime = (timestamp) => {
 // 初始化
 onMounted(() => {
   initHistory();
+  fetchModels();   // 👈 新增：初始化时拉取模型列表
 });
 
 // 定义模型列表
-const selectedModel = ref('deepseek-chat'); 
+const selectedModel = ref('没有模型');
+const modelOptions = ref([]);   // 初始空数组
 
-const modelOptions = [
-  { value: 'kimi-k2.6', label: 'Kimi: kimi-k2.6 (听GTP说它便宜好用)' },
-  { value: 'deepseek-chat', label: 'DeepSeek: V3.2 (非思考模式)' },
-  { value: 'deepseek-reasoner', label: 'DeepSeek: V3.2 (思考模式)' },
-  { value: 'openai/gpt-4o', label: 'OpenAI: GPT-4o (之前一直在用的虽然已经落伍了，而且只有4o，没有4.0)' },
-  { value: 'anthropic/claude-opus-4.6', label: 'Anthropic: Claude Opus 4.6 (超强)' },
-  { value: 'openai/gpt-5.4', label: 'OpenAI: GPT-5.4 (OpenAI目前最新)' },
-  { value: 'google/gemini-3.1-pro-preview', label: 'Google: Gemini 3.1 Pro Preview' }
-];
+// 获取模型列表
+const fetchModels = async () => {
+  try {
+    const res = await fetch('http://localhost:3001/api/models');
+    if (!res.ok) throw new Error('获取模型列表失败');
+    const data = await res.json();
+    modelOptions.value = data;
+  } catch (e) {
+    console.error(e);
+  }
+};
 
 const mainScrollRef = ref(null);
 
@@ -204,11 +208,14 @@ watch(
   padding: 12px 20px;
   cursor: pointer;
   display: flex;
-  align-items: center;
+  align-items: center;          /* 改为水平排列，原来你改成了 column，这里建议保持 center */
   color: #ececec;
   border-radius: 0 10px 10px 0;
   margin-right: 10px;
   position: relative;
+  overflow: hidden;             /* 👈 关键：防止内容直接溢出 */
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .history-item:hover {
@@ -224,7 +231,6 @@ watch(
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
 }
 
 .delete-icon {
@@ -366,28 +372,27 @@ watch(
   display: none;
 }
 
-/* 历史项样式调整 */
-.history-item {
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 10px 20px;
-}
-
+/* 图标 + 标题信息 + 删除按钮 都在同一行 */
 .item-info {
   display: flex;
-  flex-direction: column;
+  flex-direction: column;      /* 标题和时间上下排列 */
   margin-left: 10px;
-  flex: 1;
-}
-
-.title-text {
-  font-size: 14px;
-  margin-bottom: 4px;
+  flex: 1;                     /* 占据剩余宽度 */
+  min-width: 0;                /* 👈 非常重要：允许 flex 子元素收缩 */
+  overflow: hidden;            /* 👈 隐藏溢出内容 */
 }
 
 .time-text {
   font-size: 11px;
   color: #888;
+}
+
+/* 删除按钮 */
+.delete-icon {
+  display: none;
+  font-size: 14px;
+  flex-shrink: 0;              /* 防止被压缩 */
+  margin-left: 8px;            /* 与标题保持间距 */
 }
 
 .collapse-trigger {

@@ -52,6 +52,22 @@ const MODEL_LIMITS = {
   'default': 4000
 };
 
+// 模型列表配置（与 PROVIDER_CONFIG 和 MODEL_LIMITS 对应）
+const MODEL_LIST = [
+  { value: 'kimi-k2.6', label: 'Kimi: kimi-k2.6 (便宜好用)' },
+  { value: 'deepseek-chat', label: 'DeepSeek: V3.2 (非思考模式)' },
+  { value: 'deepseek-reasoner', label: 'DeepSeek: V3.2 (思考模式)' },
+  { value: 'openai/gpt-4o', label: 'OpenAI: GPT-4o' },
+  { value: 'anthropic/claude-opus-4.6', label: 'Anthropic: Claude Opus 4.6' },
+  { value: 'openai/gpt-5.4', label: 'OpenAI: GPT-5.4' },
+  { value: 'google/gemini-3.1-pro-preview', label: 'Google: Gemini 3.1 Pro Preview' }
+];
+
+// GET /api/models — 返回可用模型列表
+app.get('/api/models', (req, res) => {
+  res.json(MODEL_LIST);
+});
+
 // 智能路由
 const getProvider = (modelName) => {
   const lowerModel = modelName.toLowerCase();
