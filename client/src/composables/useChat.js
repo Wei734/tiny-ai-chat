@@ -2,7 +2,7 @@
 import { ref, nextTick } from 'vue';
 import { ElMessage } from 'element-plus';
 
-const isSidebarCollapsed = ref(false); // 新增：是否折叠
+const isSidebarCollapsed = ref(false);
 const toggleSidebar = () => {
   isSidebarCollapsed.value = !isSidebarCollapsed.value;
 };
@@ -11,19 +11,85 @@ export function useChat() {
   const messages = ref([]);
   const isThinking = ref(false);
   const messageListRef = ref(null);
-  const historyList = ref([]);
+  const historyList = ref([]);          // 存储从后端拿到的摘要列表
   const currentChatId = ref(null);
 
-  // 初始化：读取历史记录
-  const initHistory = () => {
-    const savedHistory = localStorage.getItem('ai_chat_history');
-    if (savedHistory) {
-      try {
-        historyList.value = JSON.parse(savedHistory);
-      } catch (e) {
-        console.error('历史记录读取失败', e);
-      }
+  // ===== 1. 初始化：从后端拉取历史列表 =====
+  const initHistory = async () => {
+    try {
+      const res = await fetch('http://localhost:3001/api/threads');
+      if (!res.ok) throw new Error('获取历史失败');
+      const data = await res.json();
+      historyList.value = data;   // data 是摘要数组 [{id, title, updatedAt, messageCount}]
+    } catch (e) {
+      console.error('初始化历史列表失败', e);
+      historyList.value = [];
     }
+  };
+
+  // ===== 2. 加载某个对话的完整消息 =====
+  const loadChat = async (item) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/threads/${item.id}`);
+      if (!res.ok) throw new Error('对话可能已被删除');
+      const thread = await res.json();
+      currentChatId.value = thread.id;
+      messages.value = thread.messages || [];
+    } catch (e) {
+      ElMessage.error('加载对话失败，该记录可能已损坏');
+      // 如果加载失败，从历史列表中移除（UI 上）
+      historyList.value = historyList.value.filter(h => h.id !== item.id);
+      startNewChat();
+    }
+  };
+
+  // ===== 3. 保存对话到后端（覆盖整个 messages 数组） =====
+  const saveChatToBackend = async (chatId, msgs) => {
+    try {
+      await fetch(`http://localhost:3001/api/threads/${chatId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: msgs })
+      });
+    } catch (e) {
+      console.error('保存对话失败', e);
+      // 不阻塞用户，只打印错误
+    }
+  };
+
+  // ===== 4. 删除对话（暂时只从前端移除，后端可扩展） =====
+  const deleteChat = async (id) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/threads/${id}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error('删除失败');
+    } catch (e) {
+      console.error('后端删除失败:', e);
+      ElMessage.error('删除失败，请稍后再试');
+      return; // 如果后端删除失败，前端也保留列表，避免数据不一致
+    }
+
+    // 后端删除成功后，更新前端历史列表
+    historyList.value = historyList.value.filter(item => item.id !== id);
+    if (currentChatId.value === id) {
+      startNewChat();
+    }
+    ElMessage.success('对话已删除');
+  };
+
+  // 新建对话
+  const startNewChat = () => {
+    messages.value = [];
+    currentChatId.value = null;
+  };
+
+  // 强制清空（现在只是清空当前列表，后端数据还在，你可以扩展）
+  const forceClear = () => {
+    historyList.value = [];
+    startNewChat();
+    ElMessage.success('本地列表已清空');
+    // 如需要，可以调用后端的批量删除接口
   };
 
   // 滚动到底部
@@ -35,44 +101,24 @@ export function useChat() {
     });
   };
 
-  // 保存历史记录
-  const saveHistory = () => {
-    localStorage.setItem('ai_chat_history', JSON.stringify(historyList.value));
-  };
-
-  // 新建对话
-  const startNewChat = () => {
-    messages.value = [];
-    currentChatId.value = null;
-  };
-
-  // 发送消息核心逻辑
+  // ===== 5. 发送消息（核心逻辑，改动最大） =====
   const sendMessage = async (text, model) => {
-
-    // 1. 添加用户消息
+    // 添加用户消息
     messages.value.push({ role: 'user', content: text });
     scrollToBottom();
 
-    // 2. 准备 AI 消息占位
+    // 准备 AI 消息占位
     isThinking.value = true;
     const aiMessageIndex = messages.value.length;
     messages.value.push({ role: 'assistant', content: '' });
-    
-    // 3. 如果是新对话，初始化历史记录
-    let isNewChat = false;
+
+    // 如果是新对话，生成一个线程 ID（时间戳）
     if (!currentChatId.value) {
       currentChatId.value = Date.now();
-      isNewChat = true;
-      const newChatItem = {
-        id: currentChatId.value,
-        title: text.length > 10 ? text.substring(0, 10) + '...' : text,
-        messages: []
-      };
-      historyList.value.unshift(newChatItem);
     }
 
     try {
-      // 4. 数据清洗：过滤空消息
+      // 数据清洗
       const cleanMessages = messages.value
         .filter(msg => msg && msg.content && msg.content.trim() !== '')
         .map(msg => ({ role: msg.role, content: msg.content }));
@@ -83,22 +129,22 @@ export function useChat() {
         return;
       }
 
-      // 5. 发起请求
+      // 发起聊天请求（和原来一样）
       const response = await fetch('http://localhost:3001/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-            messages: cleanMessages,
-            model: model // <--- 把选中的模型发过去
+          messages: cleanMessages,
+          model: model
         })
       });
 
       if (!response.ok) throw new Error('网络响应异常');
 
-      // 6. 处理流式响应
+      // 处理流式响应
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      isThinking.value = false; // 停止思考动画
+      isThinking.value = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -118,18 +164,17 @@ export function useChat() {
                 scrollToBottom();
               }
             } catch (e) {
-              // 忽略解析错误
+              // ignore
             }
           }
         }
       }
-      
-      // 7. 对话结束，保存
-      const currentChat = historyList.value.find(c => c.id === currentChatId.value);
-      if (currentChat) {
-        currentChat.messages = JSON.parse(JSON.stringify(messages.value));
-        saveHistory();
-      }
+
+      // ✅ 关键：流式结束后，把完整的 messages 保存到后端
+      await saveChatToBackend(currentChatId.value, messages.value);
+
+      // ✅ 顺便刷新侧边栏历史列表（重新拉取，确保标题等更新）
+      await initHistory();
 
     } catch (error) {
       console.error(error);
@@ -137,35 +182,6 @@ export function useChat() {
       messages.value[aiMessageIndex].content = '连接服务器失败...';
       isThinking.value = false;
     }
-  };
-
-  // 加载历史
-  const loadChat = (item) => {
-    try {
-      currentChatId.value = item.id;
-      messages.value = JSON.parse(JSON.stringify(item.messages));
-    } catch (e) {
-      ElMessage.error('该记录损坏，已删除');
-      deleteChat(item.id);
-      startNewChat();
-    }
-  };
-
-  // 删除历史
-  const deleteChat = (id) => {
-    historyList.value = historyList.value.filter(item => item.id !== id);
-    saveHistory();
-    if (currentChatId.value === id) {
-      startNewChat();
-    }
-  };
-
-  // 强制清空
-  const forceClear = () => {
-    localStorage.removeItem('ai_chat_history');
-    historyList.value = [];
-    startNewChat();
-    ElMessage.success('缓存已清空');
   };
 
   return {
