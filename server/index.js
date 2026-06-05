@@ -23,10 +23,36 @@ app.get('/api/models', (req, res) => {
   res.json(MODEL_LIST);
 });
 
+function buildRequestData(provider, model, messages, systemPrompt) {
+  const pureModelName = model.split('/').pop();
+
+  // 为截断计算，统一构造包含 system 的临时数组
+  const withSystem = [{ role: 'system', content: systemPrompt }, ...messages];
+  const trimmed = trimMessages(withSystem, pureModelName);
+
+  if (provider.type === 'anthropic') {
+    // Claude: system 必须放在顶层，不能出现在 messages 中
+    return {
+      model,
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: trimmed.filter(m => m.role !== 'system'),
+      stream: true,
+    };
+  }
+
+  // OpenAI 兼容（ChatGPT / Kimi / DeepSeek）
+  return {
+    model,
+    messages: trimmed,   // system 作为第一条 message 直接保留
+    stream: true,
+  };
+}
+
 // ✅ 聊天接口（整理清楚，只组装一次）
 app.post('/api/chat', async (req, res) => {
   try {
-    const { messages, model = 'gpt-4o' } = req.body;
+    const { messages, model } = req.body;
     const provider = getProvider(model);
     const pureModelName = model.split('/').pop();
 
@@ -37,41 +63,10 @@ app.post('/api/chat', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    let requestData = {};
+    // 构建调用大模型的请求信息
+    const requestData = buildRequestData(provider, model, messages, '你是一个智能助手。');
+    
 
-    // ✅ 只组装一次，直接截断
-    if (provider.type === 'openai') {
-      const systemPrompt = { role: 'system', content: '你是一个智能助手。' };
-      const fullMessages = [systemPrompt, ...messages];
-      const trimmedMessages = trimMessages(fullMessages, pureModelName);
-
-      requestData = {
-        model: model,
-        messages: trimmedMessages,
-        stream: true
-      };
-    } else if (provider.type === 'anthropic') {
-      const systemPrompt = '你是一个智能助手。';
-      const cleanMessages = messages.filter(m => m.role !== 'system');
-
-      // ✅ Claude 也做截断
-      const tempForTrim = [
-        { role: 'system', content: systemPrompt },
-        ...cleanMessages
-      ];
-      const trimmedMessages = trimMessages(tempForTrim, pureModelName);
-
-      // 截断后再分离 system
-      const finalMessages = trimmedMessages.filter(m => m.role !== 'system');
-
-      requestData = {
-        model: model,
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: finalMessages,
-        stream: true
-      };
-    }
 
     // 发起请求
     const response = await axios({
