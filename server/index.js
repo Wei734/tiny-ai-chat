@@ -7,7 +7,7 @@ const { encode } = require('gpt-tokenizer');
 
 const { PROVIDER_CONFIG, MODEL_LIMITS, MODEL_LIST, getProvider } = 
 require('./config/models');
-const { readThreads, writeThreads } = 
+const { readThreads, writeThreads, saveOrUpdateThread, getThreadById } = 
 require('./utils/storage');
 const { trimMessages } = 
 require('./utils/token');
@@ -52,21 +52,41 @@ function buildRequestData(provider, model, messages, systemPrompt) {
 // ✅ 聊天接口（整理清楚，只组装一次）
 app.post('/api/chat', async (req, res) => {
   try {
-    const { messages, model } = req.body;
+    const { threadId, model, messages } = req.body;
     const provider = getProvider(model);
     const pureModelName = model.split('/').pop();
 
+    // 取第一条用户消息（前端现在只发一条，安全起见用数组）
+    const userMessage = messages?.[0]?.content;
+    if (!userMessage) {
+      return res.status(400).json({ error: '缺少用户消息' });
+    }
+
     console.log(`[请求] 模型: ${model}, 类型: ${provider.type}, 原始消息数: ${messages.length}`);
+
+    // ---------- 1. 获取或创建线程 ----------
+    const threads = readThreads();
+    let thread = getThreadById(threadId);
+    if (!thread) {
+      saveOrUpdateThread(threadId, []);
+      thread = getThreadById(threadId);
+    }
+
+    // 2. 将当前用户消息临时加入历史（暂未写入文件）
+    const userMsgObj = { role: 'user', content: userMessage };
+    thread.messages.push(userMsgObj);
+    thread.updatedAt = new Date().toISOString();
+
+    // 3. 准备完整上下文（历史消息，不含 system，buildRequestData 会统一加）
+    const fullContext = [...thread.messages]; // 当前历史 + 刚推入的用户消息
+
+    // 构建调用大模型的请求信息
+    const requestData = buildRequestData(provider, model, fullContext, '你是一个智能助手。');
 
     // 设置 SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-
-    // 构建调用大模型的请求信息
-    const requestData = buildRequestData(provider, model, messages, '你是一个智能助手。');
-    
-
 
     // 发起请求
     const response = await axios({
@@ -81,7 +101,8 @@ app.post('/api/chat', async (req, res) => {
       responseType: 'stream'
     });
 
-    // 处理流式响应
+    // 6. 处理流式响应 + 收集助手回复
+    let assistantContent = '';
     response.data.on('data', (chunk) => {
       const lines = chunk.toString().split('\n').filter(line => line.trim() !== '');
 
@@ -92,6 +113,7 @@ app.post('/api/chat', async (req, res) => {
             const json = JSON.parse(line.replace('data: ', ''));
             const content = json.choices[0].delta?.content;
             if (content) {
+              assistantContent += content;   // ✅ 累加
               res.write(`data: ${JSON.stringify({ content })}\n\n`);
             }
           } catch (e) {}
@@ -102,6 +124,7 @@ app.post('/api/chat', async (req, res) => {
               if (json.type === 'content_block_delta' && json.delta.type === 'text_delta') {
                 const text = json.delta.text;
                 if (text) {
+                  assistantContent += text;   // ✅ 累加
                   res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
                 }
               }
@@ -112,12 +135,26 @@ app.post('/api/chat', async (req, res) => {
     });
 
     response.data.on('end', () => {
+      // 7. 助手回复完成，存入线程并写盘
+      if (assistantContent) {
+        thread.messages.push({ role: 'assistant', content: assistantContent });
+      }
+      thread.updatedAt = new Date().toISOString();
+      saveOrUpdateThread(thread.id, thread.messages);
+
       res.write('data: [DONE]\n\n');
       res.end();
     });
 
     response.data.on('error', (err) => {
-      console.error('[流错误]', err.message);
+      if (assistantContent) {
+        thread.messages.push({
+          role: 'assistant',
+          content: assistantContent + '\n\n[连接中断]'
+        });
+      }
+      thread.updatedAt = new Date().toISOString();
+      saveOrUpdateThread(thread.id, thread.messages);
       res.write(`data: ${JSON.stringify({ content: '\n\n[连接中断]' })}\n\n`);
       res.end();
     });

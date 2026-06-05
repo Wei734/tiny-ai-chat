@@ -38,54 +38,6 @@ module.exports = function(app) {
     }
     });
 
-    // 3. 保存 / 更新对话（变通为：整体覆盖消息）
-    app.post('/api/threads/:id/messages', (req, res) => {
-    try {
-        const { messages } = req.body;          // 前端把完整 messages 发过来
-        const threadId = Number(req.params.id); // 前端的 id 是时间戳数字
-
-        if (!Array.isArray(messages)) {
-        return res.status(400).json({ error: 'messages 必须为数组' });
-        }
-
-        const threads = readThreads();
-        let thread = threads.find(t => t.id === threadId);
-
-        // 自动提取标题：取第一个用户消息的前 20 个字符
-        const firstUserMsg = messages.find(m => m.role === 'user');
-        const title = firstUserMsg
-        ? (firstUserMsg.content.length > 20
-            ? firstUserMsg.content.substring(0, 20) + '...'
-            : firstUserMsg.content)
-        : '新对话';
-
-        const now = new Date().toISOString();
-
-        if (thread) {
-        // 更新已有线程
-        thread.title = title;
-        thread.messages = messages;
-        thread.updatedAt = now;
-        } else {
-        // 新线程直接创建
-        thread = {
-            id: threadId,
-            title,
-            messages,
-            createdAt: now,
-            updatedAt: now
-        };
-        threads.push(thread);
-        }
-
-        writeThreads(threads);
-        res.json({ success: true, id: threadId });
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: '保存消息失败' });
-    }
-    });
-
     // 4. 删除某个对话
     app.delete('/api/threads/:id', (req, res) => {
     try {

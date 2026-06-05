@@ -118,24 +118,14 @@ export function useChat() {
     }
 
     try {
-      // 数据清洗
-      const cleanMessages = messages.value
-        .filter(msg => msg && msg.content && msg.content.trim() !== '')
-        .map(msg => ({ role: msg.role, content: msg.content }));
-
-      if (cleanMessages.length === 0) {
-        ElMessage.warning('没有有效的消息');
-        isThinking.value = false;
-        return;
-      }
-
       // 发起聊天请求（和原来一样）
       const response = await fetch('http://localhost:3001/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          messages: cleanMessages,
-          model: model
+          threadId: currentChatId.value,
+          model: model,
+          messages: [{ role: 'user', content: text }],  // 只发一条
         })
       });
 
@@ -171,7 +161,7 @@ export function useChat() {
       }
 
       // ✅ 关键：流式结束后，把完整的 messages 保存到后端
-      await saveChatToBackend(currentChatId.value, messages.value);
+      //await saveChatToBackend(currentChatId.value, messages.value);
 
       // ✅ 顺便刷新侧边栏历史列表（重新拉取，确保标题等更新）
       await initHistory();
