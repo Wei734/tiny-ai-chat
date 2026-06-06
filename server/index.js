@@ -62,8 +62,6 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: '缺少用户消息' });
     }
 
-    console.log(`[请求] 模型: ${model}, 类型: ${provider.type}, 原始消息数: ${messages.length}`);
-
     // ---------- 1. 获取或创建线程 ----------
     const threads = readThreads();
     let thread = getThreadById(threadId);
