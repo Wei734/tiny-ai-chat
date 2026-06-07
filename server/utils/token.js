@@ -15,6 +15,27 @@ function estimateMessageTokens(msg) {
 }
 
 /**
+ * 粗略估算消息数组的 token 数
+ * @param {Array<{role: string, content: string}>} messages
+ * @returns {number}
+ */
+function countTokens(messages) {
+  if (!messages || messages.length === 0) return 0;
+
+  let totalChars = 0;
+  for (const msg of messages) {
+    if (msg.content && typeof msg.content === 'string') {
+      totalChars += msg.content.length;
+    }
+    // 每条消息还有格式开销（role 等），大约 4 个 token
+    totalChars += 4 * 3.5;  // 换算为字符数
+  }
+
+  // 中英文混合粗略比例：1 token ≈ 3.5 个字符
+  return Math.ceil(totalChars / 3.5);
+}
+
+/**
  * 根据模型上下文限制或指定预算，保留最近若干轮完整对话
  * @param {Array} messages - 完整消息数组（含 system）
  * @param {string} model - 模型标识，如 'gpt-4o' 或 'openai/gpt-4o'，用于查表
@@ -89,4 +110,4 @@ function trimMessages(messages, model, maxTokens) {
   return result;
 }
 
-module.exports = { trimMessages };
+module.exports = { trimMessages, countTokens };
