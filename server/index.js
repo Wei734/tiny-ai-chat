@@ -7,7 +7,7 @@ const { encode } = require('gpt-tokenizer');
 
 const { PROVIDER_CONFIG, MODEL_LIMITS, MODEL_LIST, getProvider } = 
 require('./config/models');
-const { readThreads, writeThreads, saveOrUpdateThread, getThreadById } = 
+const { readThreads, saveOrUpdateThread, getThreadById } = 
 require('./utils/storage');
 const { trimMessages, countTokens } = 
 require('./utils/token');
@@ -15,6 +15,10 @@ const { splitIntoRounds, retrieveMemories, dynamicAllocation } =
 require('./utils/memory');
 const { detectTrigger } = 
 require('../server/triggerDetector')
+const { cleanMessagesForAPI } = 
+require('./utils/helpers')
+const { loadVectors } = 
+require('./utils/vectorStore');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -22,13 +26,14 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+loadVectors();
+
 // GET /api/models — 返回可用模型列表
 app.get('/api/models', (req, res) => {
   res.json(MODEL_LIST);
 });
 
 function buildRequestData(provider, model, messages, systemPrompt) {
-  const pureModelName = model.split('/').pop();
   const MAX_WINDOW = 6000; //MODEL_LIMITS[pureModelName] || MODEL_LIMITS.default;
   const MEMORY_THRESHOLD = MAX_WINDOW * 0.5;    // 超过 50% 窗口才启用记忆
   const RESERVED_OUTPUT = 4000;                 // 留给模型输出的 token
@@ -49,14 +54,14 @@ function buildRequestData(provider, model, messages, systemPrompt) {
         model,
         max_tokens: 4096,
         system: systemPrompt,
-        messages: withSystem.filter(m => m.role !== 'system'),
+        messages: cleanMessagesForAPI(withSystem.filter(m => m.role !== 'system')),
         stream: true,
       };
     }
     // OpenAI 兼容（ChatGPT / Kimi / DeepSeek）
     return {
       model,
-      messages: withSystem,   // system 作为第一条 message 直接保留
+      messages: cleanMessagesForAPI(withSystem),   // system 作为第一条 message 直接保留
       stream: true,
     };
   }
@@ -83,11 +88,10 @@ function buildRequestData(provider, model, messages, systemPrompt) {
   console.log(`[触发判定] 提问片段: "${query.substring(0, 30)}..." → 类型: ${triggerType}`);
   // =================================
 
-
   // 3. 从早期历史中检索记忆（排除 recentMessages 对应的消息）
   let memories = [];
   if (triggerType === 'explicit' || triggerType === 'implicit_confirmed') {
-    memories = retrieveMemories(query, oldMessages, memoryBudget);
+    memories = cleanMessagesForAPI(retrieveMemories(query, oldMessages, memoryBudget));
   } else {
     console.log('[触发判定] 无触发，跳过检索');
   }
@@ -121,7 +125,7 @@ function buildRequestData(provider, model, messages, systemPrompt) {
       model,
       max_tokens: 4096,
       system: finalSystemPrompt,
-      messages: recentMessages,
+      messages: cleanMessagesForAPI(recentMessages),
       stream: true,
     };
   }
@@ -129,7 +133,7 @@ function buildRequestData(provider, model, messages, systemPrompt) {
   // OpenAI 兼容（ChatGPT / Kimi / DeepSeek）
   return {
     model,
-    messages: finalMessages,   // system 作为第一条 message 直接保留
+    messages: cleanMessagesForAPI(finalMessages),   // system 作为第一条 message 直接保留
     stream: true,
   };
 }
@@ -139,7 +143,6 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { threadId, model, messages } = req.body;
     const provider = getProvider(model);
-    const pureModelName = model.split('/').pop();
 
     // 取第一条用户消息（前端现在只发一条，安全起见用数组）
     const userMessage = messages?.[0]?.content;

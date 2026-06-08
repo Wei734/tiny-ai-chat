@@ -28,6 +28,17 @@ const PROVIDER_CONFIG = {
   }
 };
 
+// 模型 -> 供应商配置 key 的映射表
+const MODEL_PROVIDER_MAP = {
+  'kimi-k2.6': 'kimi',
+  'deepseek-chat': 'deepseek',
+  'deepseek-reasoner': 'deepseek',
+  'gpt-4o': 'ofox',
+  'gpt-5.4': 'ofox',
+  'claude-opus-4.6': 'claude',
+  'gemini-3.1-pro-preview': 'gemini',   // 实际用的还是 ofox 的 openai 兼容接口，但 PRODIVER_CONFIG 里 gemini 已经指向了 ofox 的 url，所以保持一致
+};
+
 // --- 模型上下文限制 ---
 const MODEL_LIMITS = {
   'gpt-4o': 128000,
@@ -45,20 +56,30 @@ const MODEL_LIST = [
   { value: 'kimi-k2.6', label: 'Kimi: kimi-k2.6 (便宜好用)' },
   { value: 'deepseek-chat', label: 'DeepSeek: V3.2 (非思考模式)' },
   { value: 'deepseek-reasoner', label: 'DeepSeek: V3.2 (思考模式)' },
-  { value: 'openai/gpt-4o', label: 'OpenAI: GPT-4o' },
-  { value: 'anthropic/claude-opus-4.6', label: 'Anthropic: Claude Opus 4.6' },
-  { value: 'openai/gpt-5.4', label: 'OpenAI: GPT-5.4' },
-  { value: 'google/gemini-3.1-pro-preview', label: 'Google: Gemini 3.1 Pro Preview' }
+  { value: 'gpt-4o', label: 'OpenAI: GPT-4o' },
+  { value: 'claude-opus-4.6', label: 'Anthropic: Claude Opus 4.6' },
+  { value: 'gpt-5.4', label: 'OpenAI: GPT-5.4' },
+  { value: 'gemini-3.1-pro-preview', label: 'Google: Gemini 3.1 Pro Preview' }
 ];
 
 // 智能路由
 function getProvider(modelName) {
-  const lowerModel = modelName.toLowerCase();
-  if (lowerModel.includes('moonshot') || lowerModel.includes('kimi')) return PROVIDER_CONFIG.kimi;
-  if (lowerModel.includes('claude') || lowerModel.includes('opus')) return PROVIDER_CONFIG.claude;
-  if (lowerModel.includes('gemini')) return PROVIDER_CONFIG.gemini;
-  if (lowerModel.includes('deepseek')) return PROVIDER_CONFIG.deepseek;
-  return PROVIDER_CONFIG.ofox;
-};
+  if (!modelName || typeof modelName !== 'string') {
+    console.error('[getProvider] 无效的 modelName:', modelName);
+    return null;
+  }
+
+  const providerKey = MODEL_PROVIDER_MAP[modelName];
+
+  if (!providerKey) {
+    console.warn(`[getProvider] 未匹配到供应商，模型名: ${modelName}`);
+    // 根据你的需求选择：
+    // 1. 返回 null 让上层报错
+    // 2. 返回一个默认供应商（比如 ofox）
+    return null;   // 或 return PROVIDER_CONFIG.ofox;
+  }
+
+  return PROVIDER_CONFIG[providerKey];
+}
 
 module.exports = { PROVIDER_CONFIG, MODEL_LIMITS, MODEL_LIST, getProvider };

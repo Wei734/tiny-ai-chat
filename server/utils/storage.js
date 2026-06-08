@@ -1,12 +1,26 @@
 // server/utils/storage.js
 const fs = require('fs');
 const path = require('path');
+const { generateMessageId } = require('./helpers'); 
 
 const DATA_DIR = path.join(__dirname, '..', 'data');        // 注意路径，回到 server 层
 const THREADS_FILE = path.join(DATA_DIR, 'threads.json');
 
-// 确保 data 目录和文件存在
-function ensureDataFile() {
+/**
+ * 确保 data 目录存在
+ */
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+
+/**
+ * 确保 data 目录和 threads.json 文件存在
+ * 若文件不存在，则创建空数组文件
+ */
+function ensureThreadsFile() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
@@ -17,14 +31,14 @@ function ensureDataFile() {
 
 // 读取所有线程
 function readThreads() {
-  ensureDataFile();
+  ensureThreadsFile();
   const raw = fs.readFileSync(THREADS_FILE, 'utf-8');
   return JSON.parse(raw);
 }
 
 // 写入所有线程（覆盖写入，简单直接）
 function writeThreads(threads) {
-  ensureDataFile();
+  ensureThreadsFile();
   fs.writeFileSync(THREADS_FILE, JSON.stringify(threads, null, 2), 'utf-8');
 }
 
@@ -37,6 +51,14 @@ function saveOrUpdateThread(threadId, messages) {
   if (!Array.isArray(messages)) {
     throw new Error('messages 必须为数组');
   }
+  
+  // ========== 新增：为没有 id 的消息自动生成 id ==========
+  for (const msg of messages) {
+    if (!msg.id) {
+      msg.id = generateMessageId();
+    }
+  }
+  // =====================================================
 
   const threads = readThreads();
   let thread = threads.find(t => t.id === threadId);
@@ -82,4 +104,4 @@ function getThreadById(threadId) {
   return threads.find(t => t.id == threadId);   // 直接返回引用
 }
 
-module.exports = { readThreads, writeThreads, saveOrUpdateThread, getThreadById };
+module.exports = { ensureDataDir, readThreads, writeThreads, saveOrUpdateThread, getThreadById };

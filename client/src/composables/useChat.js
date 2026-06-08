@@ -43,20 +43,6 @@ export function useChat() {
     }
   };
 
-  // ===== 3. 保存对话到后端（覆盖整个 messages 数组） =====
-  const saveChatToBackend = async (chatId, msgs) => {
-    try {
-      await fetch(`http://localhost:3001/api/threads/${chatId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: msgs })
-      });
-    } catch (e) {
-      console.error('保存对话失败', e);
-      // 不阻塞用户，只打印错误
-    }
-  };
-
   // ===== 4. 删除对话（暂时只从前端移除，后端可扩展） =====
   const deleteChat = async (id) => {
     try {

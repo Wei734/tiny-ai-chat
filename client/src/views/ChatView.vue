@@ -260,6 +260,11 @@ watch(
   padding-left: 20px;
   font-weight: bold;
   color: #333;
+  /* 👇 添加以下 3 条 */
+  position: sticky;
+  top: 0;
+  background-color: #f5f7fa;   /* 与 main-content 背景相同 */
+  z-index: 10;                 /* 保证不被消息遮挡 */
 }
 
 /* 移除 .message-list 的滚动属性，仅作包裹 */
