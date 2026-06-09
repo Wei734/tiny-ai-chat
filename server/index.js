@@ -19,6 +19,8 @@ const { cleanMessagesForAPI } =
 require('./utils/helpers')
 const { loadVectors } = 
 require('./utils/vectorStore');
+const { initEmbeddingModel } = 
+require('./utils/embeddings');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,14 +28,12 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-loadVectors();
-
 // GET /api/models — 返回可用模型列表
 app.get('/api/models', (req, res) => {
   res.json(MODEL_LIST);
 });
 
-function buildRequestData(provider, model, messages, systemPrompt) {
+async function buildRequestData(provider, model, messages, systemPrompt) {
   const MAX_WINDOW = 6000; //MODEL_LIMITS[pureModelName] || MODEL_LIMITS.default;
   const MEMORY_THRESHOLD = MAX_WINDOW * 0.5;    // 超过 50% 窗口才启用记忆
   const RESERVED_OUTPUT = 4000;                 // 留给模型输出的 token
@@ -91,7 +91,7 @@ function buildRequestData(provider, model, messages, systemPrompt) {
   // 3. 从早期历史中检索记忆（排除 recentMessages 对应的消息）
   let memories = [];
   if (triggerType === 'explicit' || triggerType === 'implicit_confirmed') {
-    memories = cleanMessagesForAPI(retrieveMemories(query, oldMessages, memoryBudget));
+    memories = cleanMessagesForAPI(await retrieveMemories(query, oldMessages, memoryBudget));
   } else {
     console.log('[触发判定] 无触发，跳过检索');
   }
@@ -167,7 +167,7 @@ app.post('/api/chat', async (req, res) => {
     const fullContext = [...thread.messages]; // 当前历史 + 刚推入的用户消息
 
     // 构建调用大模型的请求信息
-    const requestData = buildRequestData(provider, model, fullContext, '你是一个智能助手。');
+    const requestData = await buildRequestData(provider, model, fullContext, '你是一个智能助手。');
 
     // 设置 SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream');
@@ -220,13 +220,28 @@ app.post('/api/chat', async (req, res) => {
       }
     });
 
-    response.data.on('end', () => {
+    response.data.on('end', async () => {
       // 7. 助手回复完成，存入线程并写盘
       if (assistantContent) {
         thread.messages.push({ role: 'assistant', content: assistantContent });
       }
       thread.updatedAt = new Date().toISOString();
       saveOrUpdateThread(thread.id, thread.messages);
+
+      // 向量化新消息（用户消息和助手回复）
+      const { embed } = require('./utils/embeddings');
+      const { addVector, getVector } = require('./utils/vectorStore');
+      for (const msg of thread.messages) {
+        if (msg.id && !getVector(msg.id)) {
+          try {
+            const vector = await embed(msg.content);
+            addVector(msg.id, vector);
+            console.log(`已为消息 ${msg.id} 生成向量`);
+          } catch (err) {
+            console.error(`向量化失败: ${msg.id}`, err.message);
+          }
+        }
+      }
 
       res.write('data: [DONE]\n\n');
       res.end();
@@ -258,6 +273,11 @@ app.post('/api/chat', async (req, res) => {
 
 require('./routes/threads')(app);
 
-app.listen(PORT, () => {
-  console.log(`后端服务运行在 http://localhost:${PORT}`);
-});
+async function start() {
+  await initEmbeddingModel();   // 先加载 embedding 模型
+  loadVectors();                // 再加载向量存储
+  app.listen(PORT, () => {
+    console.log(`后端服务运行在 http://localhost:${PORT}`);
+  });
+}
+start();

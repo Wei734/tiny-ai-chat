@@ -2,7 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 const { generateMessageId } = require('./helpers'); 
-
+const { embed } = require('./embeddings');
+const { addVector } = require('./vectorStore');
 const DATA_DIR = path.join(__dirname, '..', 'data');        // 注意路径，回到 server 层
 const THREADS_FILE = path.join(DATA_DIR, 'threads.json');
 

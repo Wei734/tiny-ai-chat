@@ -17,3 +17,6 @@ Thumbs.db
 # 构建输出
 dist/
 build/
+
+# 对话数据
+server/data/

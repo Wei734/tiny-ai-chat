@@ -1,13 +1,21 @@
 // server/utils/vectorStore.js
 const fs = require('fs');
 const path = require('path');
-const { ensureDataDir } = require('./storage'); 
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const VECTORS_FILE = path.join(DATA_DIR, 'vectors.json');
 
 // 内存中的向量映射：messageId -> Float32Array
 const vectorMap = new Map();
+
+/**
+ * 确保 data 目录存在
+ */
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
 
 /**
  * 从 vectors.json 加载所有向量到内存

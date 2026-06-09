@@ -1,7 +1,7 @@
 // \server\utils\memory.js
-const { countTokens } = 
-require('./token');
-
+const { countTokens } = require('./token');
+const { embed } = require('./embeddings');      // <-- 必须有
+const { getVector } = require('./vectorStore'); // <-- 必须有
 
 // 简单中英文停用词表（可自行扩充）
 const STOP_WORDS = new Set([
@@ -157,37 +157,58 @@ function dynamicAllocation(messages, totalBudget) {
   return { recentMessages, memoryBudget };
 }
 
+// ---------- 新增：余弦相似度 ----------
+function cosineSimilarity(vecA, vecB) {
+  if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dot += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  if (denominator === 0) return 0;
+  return dot / denominator;
+}
+
 /**
- * 从旧消息池中检索与查询相关的记忆
+ * 从旧消息池中检索与查询相关的记忆（向量语义版）
  * @param {string} query - 用户查询文本
- * @param {Array} oldMessages - 已经排除最近轮次的旧消息数组
+ * @param {Array} oldMessages - 已排除最近轮次的旧消息数组
  * @param {number} maxTokens - 分配给记忆的最大 token 预算
- * @returns {Array} 按时间升序排列的相关记忆消息
+ * @returns {Promise<Array>} 按时间升序排列的相关记忆消息
  */
-function retrieveMemories(query, oldMessages, maxTokens) {
+async function retrieveMemories(query, oldMessages, maxTokens) {
   if (!oldMessages || oldMessages.length === 0) return [];
 
-  // 1. 打分
-  const scored = oldMessages.map(msg => ({
-    msg,
-    score: scoreByKeywords(query, msg.content)
-  }));
+  // 1. 生成查询向量
+  const queryVector = await embed(query);
 
-  // 2. 按得分降序排序
+  // 2. 为每条消息打分（有向量的消息用余弦相似度，无向量的跳过）
+  const scored = [];
+  for (const msg of oldMessages) {
+    if (!msg.id) continue;
+    const vec = getVector(msg.id);
+    if (!vec) continue; // 还没有向量的消息（比如迁移前的老消息）
+    const score = cosineSimilarity(queryVector, vec);
+    if (score < 0.2) continue; // 可调阈值：低于 0.2 视为不相关
+    scored.push({ msg, score });
+  }
+
+  // 3. 按相似度降序排序
   scored.sort((a, b) => b.score - a.score);
 
-  // 3. 按 token 预算截取（相关度太低也丢弃）
+  // 4. 按 token 预算截取
   const selected = [];
   let usedTokens = 0;
   for (const item of scored) {
-    if (item.score < 0.05) break;
     const msgTokens = countTokens([item.msg]);
     if (usedTokens + msgTokens > maxTokens) break;
     selected.push(item.msg);
     usedTokens += msgTokens;
   }
 
-  // 4. 按原始时间顺序排列（便于模型理解时间线）
+  // 5. 按原始时间顺序排列（便于模型理解时间线）
   selected.sort((a, b) => oldMessages.indexOf(a) - oldMessages.indexOf(b));
 
   return selected;

@@ -1,5 +1,6 @@
 // server/routes/threads.js
 const { readThreads, writeThreads } = require('../utils/storage');
+const { deleteVector } = require('../utils/vectorStore');
 
 module.exports = function(app) {
     // ========== 线程管理 API ==========
@@ -40,17 +41,32 @@ module.exports = function(app) {
 
     // 4. 删除某个对话
     app.delete('/api/threads/:id', (req, res) => {
-    try {
-        const threads = readThreads();
-        const filtered = threads.filter(t => t.id != req.params.id);
-        if (filtered.length === threads.length) {
-        return res.status(404).json({ error: '对话不存在' });
+        try {
+            const threadId = req.params.id;
+            const threads = readThreads();
+            const threadToDelete = threads.find(t => t.id == threadId);
+
+            if (!threadToDelete) {
+            return res.status(404).json({ error: '对话不存在' });
+            }
+
+            // 清理该对话内所有消息的向量
+            if (threadToDelete.messages) {
+            for (const msg of threadToDelete.messages) {
+                if (msg.id) {
+                deleteVector(msg.id);
+                }
+            }
+            }
+
+            // 删除对话并写回
+            const filtered = threads.filter(t => t.id != threadId);
+            writeThreads(filtered);
+
+            res.json({ success: true, deleted: threadId });
+        } catch (e) {
+            console.error('删除失败:', e);
+            res.status(500).json({ error: '删除失败' });
         }
-        writeThreads(filtered);
-        res.json({ success: true });
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: '删除失败' });
-    }
     });
 }
