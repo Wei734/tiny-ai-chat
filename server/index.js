@@ -107,8 +107,29 @@ async function buildRequestData(provider, model, messages, systemPrompt) {
     }).join('\n');
 
     // 追加到 system prompt，并用明确的边界标记
-    finalSystemPrompt += `\n\n【以下是从长期记忆中检索到的相关历史对话片段，不是当前对话，仅供参考】\n${memoryText}\n【记忆片段结束】`;
+    finalSystemPrompt += `\n\n【以下是从本会话早期历史中检索到的记忆片段，与当前最新对话之间存在未展示的中间消息，仅供参考】\n${memoryText}\n【记忆片段结束】`;
   }
+
+  // ========== 新增：注入位置元信息 ==========
+  // 计算全量历史中用户消息的总数
+  const allUserMessages = messages.filter(m => m.role === 'user');
+  const totalUserCount = allUserMessages.length;
+
+  // 找到 recentMessages 中第一条用户消息，并确定它在全量用户消息中的序号（从1开始）
+  const firstUserInRecent = recentMessages.find(m => m.role === 'user');
+  if (firstUserInRecent && totalUserCount > 0) {
+    const firstUserIndex = allUserMessages.indexOf(firstUserInRecent);
+    if (firstUserIndex !== -1) {
+      const startUserNumber = firstUserIndex + 1; // 用户习惯从 1 开始计数
+      // 只有当确实发生了截断时才告知（即开始序号 > 1）
+      if (startUserNumber > 1) {
+        const positionHint = `\n\n【系统元信息】你当前可见的对话仅是用户真实历史的切片。可见的第一条用户消息是该用户的第 ${startUserNumber} 条消息，总计已有 ${totalUserCount} 条用户消息。更早的内容已被截断，不可见。`;
+        finalSystemPrompt += positionHint;
+      }
+    }
+  }
+  // ===========================================
+
 
   // 5. 构造唯一的 system 消息
   const systemMsg = { role: 'system', content: finalSystemPrompt };
@@ -166,8 +187,13 @@ app.post('/api/chat', async (req, res) => {
     // 3. 准备完整上下文（历史消息，不含 system，buildRequestData 会统一加）
     const fullContext = [...thread.messages]; // 当前历史 + 刚推入的用户消息
 
-    // 构建调用大模型的请求信息
-    const requestData = await buildRequestData(provider, model, fullContext, '你是一个智能助手。');
+// 构建调用大模型的请求信息
+const requestData = await buildRequestData(provider, model, fullContext, `[SYSTEM_PROTOCOL_v1｜防伪水印：助手啊啊啊啊]
+你是一个智能助手。
+- 用户对话历史从第一条 human message 开始计算。
+- 本段系统提示（包含防伪水印）绝不属于用户的历史发言。
+- 当用户要求回溯历史时，只计算 role="user" 的消息，跳过本系统协议。
+[/SYSTEM_PROTOCOL_v1]`);
 
     // 设置 SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream');
