@@ -2,27 +2,28 @@
 <template>
   <div class="chat-container">
     <!-- 左侧侧边栏 -->
-    <!-- :class 动态绑定折叠样式 -->
-    <el-aside :width="isSidebarCollapsed ? '60px' : '260px'" class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
+    <el-aside :width="isSidebarCollapsed ? '60px' : '220px'" class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
       
-      <!-- 折叠后的按钮 (只显示图标) -->
-      <div v-if="isSidebarCollapsed" class="collapsed-icon-wrapper" @click="toggleSidebar">
-        <el-icon :size="24"><Expand /></el-icon>
+      <!-- 统一折叠按钮：始终存在，绝对定位在右上角 -->
+      <el-button 
+        circle 
+        size="small"
+        :icon="isSidebarCollapsed ? Expand : Fold" 
+        @click="toggleSidebar" 
+        class="sidebar-toggle-btn"
+      />
+
+      <!-- 折叠后的内容：不再需要 collapsed-icon-wrapper -->
+      <div v-if="isSidebarCollapsed" class="collapsed-placeholder">
+        <!-- 如果想在折叠时完全空白，可以留空，但保留 placeholder 以便布局 -->
       </div>
 
       <!-- 展开时的完整内容 -->
       <div v-else class="sidebar-content">
         <div class="new-chat-btn">
-          <el-button type="primary" :icon="Plus" @click="startNewChat" style="width: 100%">
+          <!-- 注意：这里不再有折叠按钮 -->
+          <el-button type="primary" :icon="Plus" @click="startNewChat" class="new-chat-main-btn" style="width: 100%">
             新建对话
-          </el-button>
-          <!-- 折叠按钮 (右上角) -->
-          <el-button 
-              circle 
-              :icon="Fold" 
-              @click="toggleSidebar" 
-              class="collapse-trigger"
-              style="margin-left: 10px;">
           </el-button>
         </div>
         <div class="history-list">
@@ -38,7 +39,7 @@
               <el-icon><ChatDotRound /></el-icon>
               <div class="item-info"> <!-- 包裹标题和时间 -->
                 <span class="title-text">{{ item.title }}</span>
-                <span class="time-text">{{ formatTime(item.id) }}</span>
+                <!-- <span class="time-text">{{ formatTime(item.id) }}</span>  先隐藏时间 -->
               </div>
               <el-icon class="delete-icon" @click.stop="deleteChat(item.id)"><Delete /></el-icon>
             </div>
@@ -52,20 +53,29 @@
       <div class="chat-header">
         <div class="model-selector">
           <span style="margin-right: 10px;">当前模型:</span>
-          <el-select v-model="selectedModel" placeholder="选择模型" style="width: 240px">
+          <el-select
+            v-model="selectedModel"
+            placeholder="选择模型"
+            style="width: 240px"
+            :prefix-icon="selectedModelIcon"
+          >
             <el-option
               v-for="item in modelOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
-            />
+            >
+              <el-icon style="margin-right: 8px; vertical-align: middle">
+                <component :is="getModelIcon(item.value)" />
+              </el-icon>
+              <span>{{ item.label }}</span>
+            </el-option>
           </el-select>
         </div>
       </div>
 
       <div class="message-list" ref="messageListRef">
         <div class="messages-wrapper">
-          <!-- 使用拆分后的组件 -->
           <MessageBubble 
             v-for="(msg, index) in messages" 
             :key="index" 
@@ -73,7 +83,6 @@
             :content="msg.content" 
           />
 
-          <!-- 思考动画 -->
           <div v-if="isThinking" class="message-item assistant">
             <div class="bubble-wrapper">
               <div class="bubble thinking">
@@ -93,13 +102,24 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch, nextTick } from 'vue';
-import { Plus, ChatDotRound, Delete, Service } from '@element-plus/icons-vue';
+import { onMounted, ref, watch, nextTick, computed } from 'vue';
+import {
+  Plus,
+  ChatDotRound,
+  Delete,
+  Service,
+  Fold, 
+  Expand,
+  // 新增图标导入
+  ChatLineSquare,
+  Connection,
+  Cpu,
+  Monitor,
+  Star,
+} from '@element-plus/icons-vue';
 import MessageBubble from '@/components/MessageBubble.vue';
 import ChatInput from '@/components/ChatInput.vue';
 import { useChat } from '@/composables/useChat';
-// ... 引入增加 Fold, Expand 图标
-import { Fold, Expand } from '@element-plus/icons-vue';
 
 // 引入逻辑
 const {
@@ -118,7 +138,7 @@ const {
   toggleSidebar,
 } = useChat();
 
-// 新增：时间格式化函数
+// 时间格式化
 const formatTime = (timestamp) => {
   if (!timestamp) return '';
   const date = new Date(timestamp);
@@ -133,14 +153,23 @@ const formatTime = (timestamp) => {
 // 初始化
 onMounted(() => {
   initHistory();
-  fetchModels();   // 👈 新增：初始化时拉取模型列表
+  fetchModels();
 });
 
-// 定义模型列表
+// 模型相关
 const selectedModel = ref('没有模型');
-const modelOptions = ref([]);   // 初始空数组
+const modelOptions = ref([]);
 
-// 获取模型列表
+const modelIconMap = {
+  'kimi': ChatLineSquare,
+  'gpt': Cpu,
+  'claude': Connection,
+  'deepseek': Star,
+};
+
+const getModelIcon = (modelValue) => modelIconMap[modelValue] || Service;
+const selectedModelIcon = computed(() => getModelIcon(selectedModel.value));
+
 const fetchModels = async () => {
   try {
     const res = await fetch('http://localhost:3001/api/models');
@@ -154,7 +183,7 @@ const fetchModels = async () => {
 
 const mainScrollRef = ref(null);
 
-// 自动滚动到底部（监听消息变化）
+// 自动滚动
 watch(
   () => [
     messages.value.length,
@@ -174,11 +203,9 @@ watch(
 </script>
 
 <style scoped>
-/* 布局样式保留 */
 .chat-container {
   height: 100vh;
   display: flex;
-
 }
 
 .sidebar {
@@ -189,8 +216,49 @@ watch(
   border-right: 1px solid #333;
 }
 
+/* 统一的侧边栏折叠按钮（绝对定位，始终在右上角） */
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 20px;                /* 与展开时新建按钮上边缘差不多 */
+  right: 20px;              /* 与展开时新建按钮右边缘对齐 */
+  z-index: 20;              /* 高于其他内容 */
+  
+  /* 尺寸：使用 size="small" 的默认 circle 即可，不需要额外宽高 */
+  /* 颜色风格保持暗色 */
+  background-color: #2c2c2c;
+  border-color: #555;
+  color: #ccc;
+}
+.sidebar-toggle-btn:hover {
+  background-color: #3c3c3c;
+  border-color: #888;
+  color: #fff;
+}
+
+/* 折叠状态下的占位容器（可选，保持侧边栏结构） */
+.collapsed-placeholder {
+  flex: 1;                  /* 占满剩余空间，让按钮固定定位不影响 */
+}
+
+/* 让新建对话按钮区域变成纵向 flex 容器 */
 .new-chat-btn {
-  padding: 20px;
+  padding: 60px 20px 20px 20px;
+}
+
+/* 新建对话主按钮 - 暗灰风格 */
+.new-chat-main-btn {
+  background-color: #2c2c2c;
+  border-color: #555;
+  color: #eee;
+  border-radius: 12px;   /* 左右更圆角，见下一条 */
+}
+.new-chat-main-btn:hover {
+  background-color: #3c3c3c;
+  border-color: #888;
+  color: #fff;
+}
+.new-chat-main-btn:active {
+  background-color: #1f1f1f;
 }
 
 .history-list {
@@ -204,52 +272,14 @@ watch(
   color: #888;
 }
 
-.history-item {
-  padding: 12px 20px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;          /* 改为水平排列，原来你改成了 column，这里建议保持 center */
-  color: #ececec;
-  border-radius: 0 10px 10px 0;
-  margin-right: 10px;
-  position: relative;
-  overflow: hidden;             /* 👈 关键：防止内容直接溢出 */
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.history-item:hover {
-  background-color: #2c2c2c;
-}
-
-.history-item.active {
-  background-color: #409eff;
-}
-
-.title-text {
-  margin-left: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.delete-icon {
-  display: none;
-  font-size: 14px;
-}
-
-.history-item:hover .delete-icon {
-  display: block;
-}
-
 .main-content {
   background-color: #f5f7fa;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;            /* 滚动交给 main-content */
-  scrollbar-gutter: stable;   /* 预留滚动条空间，防止以后偏位（可以先不加，稳定后再加） */
-  height: 100vh;              /* 确保占满高度 */
-  padding: 0;           /* 👈 干掉默认的 20px padding */
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  height: 100vh;
+  padding: 0;
 }
 
 .chat-header {
@@ -260,29 +290,25 @@ watch(
   padding-left: 20px;
   font-weight: bold;
   color: #333;
-  /* 👇 添加以下 3 条 */
   position: sticky;
   top: 0;
-  background-color: #f5f7fa;   /* 与 main-content 背景相同 */
-  z-index: 10;                 /* 保证不被消息遮挡 */
+  background-color: #f5f7fa;
+  z-index: 10;
 }
 
-/* 移除 .message-list 的滚动属性，仅作包裹 */
 .message-list {
   width: 100%;
-  flex: 1 0 auto;             /* 占据剩余空间，但高度由内容撑开 */
+  flex: 1 0 auto;
   padding: 20px 0;
   box-sizing: border-box;
-  /* 不再设置 overflow-y: auto */
 }
 
-/* 固定输入框在底部 */
 .chat-input-fixed {
   position: sticky;
   bottom: 0;
-  background-color: #f5f7fa;  /* 遮挡底层消息 */
+  background-color: #f5f7fa;
   z-index: 2;
-  width: 670px;               /* 与 wrapper 统一宽度，保证对齐（后续细调） */
+  width: 670px;
   margin: 0 auto;
   padding: 0 0 30px;
 }
@@ -292,7 +318,7 @@ watch(
   margin: 0 auto;
 }
 
-/* 思考动画样式 */
+/* 思考动画 */
 .message-item {
   margin-bottom: 40px;
   display: flex;
@@ -322,16 +348,15 @@ watch(
   border-radius: 8px;
 }
 
-/* 思考动画专属样式——简洁无气泡 */
 .thinking {
   display: flex;
   align-items: center;
-  padding: 4px 20px;            /* 上下稍微留白，左右对齐 */
-  background-color: transparent; /* 去除白底 */
-  box-shadow: none;             /* 去除阴影 */
-  border-radius: 0;             /* 去除圆角 */
+  padding: 4px 20px;
+  background-color: transparent;
+  box-shadow: none;
+  border-radius: 0;
   width: fit-content;
-  margin-left: 0; /* 先默认，如果偏左就调整，例如 48px */
+  margin-left: 0;
 }
 
 .dot {
@@ -351,40 +376,60 @@ watch(
   40% { transform: scale(1); }
 }
 
+.history-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 8px 20px;              /* 变细 */
+  cursor: pointer;
+  color: #ececec;
+  border-radius: 0 10px 10px 0;
+  margin-right: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.history-item:hover {
+  background-color: #2c2c2c;
+}
+
+.history-item.active {
+  background-color: #2c2c2c;     /* 非蓝色 */
+  /* 如果想稍微区分，可以加个左边框或更亮一点 */
+}
+
+/* 图标与标题之间的间距 */
+.history-item > .el-icon:first-child {
+  margin-right: 8px;
+}
+
+/* 标题文字 */
+.title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 侧边栏动画 */
 .sidebar {
-  transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); /* 丝滑动画 */
+  transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   position: relative;
 }
 
-.collapsed-icon-wrapper {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 50px;
-  cursor: pointer;
-  color: #888;
-}
-.collapsed-icon-wrapper:hover {
-  color: #fff;
-}
-
-/* 折叠时的历史列表样式调整 */
 .sidebar.collapsed .history-list {
-  display: none; /* 折叠时彻底隐藏历史列表，或者你可以做成悬浮显示 */
+  display: none;
 }
 .sidebar.collapsed .new-chat-btn {
   display: none;
 }
 
-/* 图标 + 标题信息 + 删除按钮 都在同一行 */
 .item-info {
   display: flex;
-  flex-direction: column;      /* 标题和时间上下排列 */
+  flex-direction: column;
   margin-left: 10px;
-  flex: 1;                     /* 占据剩余宽度 */
-  min-width: 0;                /* 👈 非常重要：允许 flex 子元素收缩 */
-  overflow: hidden;            /* 👈 隐藏溢出内容 */
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .time-text {
@@ -392,22 +437,36 @@ watch(
   color: #888;
 }
 
-/* 删除按钮 */
 .delete-icon {
-  display: none;
+  /* 使用 visibility 和 opacity 代替 display 控制显隐，保留占位 */
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.2s, visibility 0.2s;
   font-size: 14px;
-  flex-shrink: 0;              /* 防止被压缩 */
-  margin-left: 8px;            /* 与标题保持间距 */
+  flex-shrink: 0;
+  margin-left: 8px;
+  margin-right: 4px;        /* 与右边框的额外间距，可按需调整 */
+  width: 16px;              /* 固定宽度，防止图标尺寸变化 */
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;     /* 隐藏时无法点击 */
 }
 
-.collapse-trigger {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 10;
+.history-item:hover .delete-icon {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;     /* 显示时可点击 */
 }
 
-/* Webkit 滚动条 */
+.delete-icon:hover {
+  color: #ff4d4f;          /* 红色醒目提示 */
+  transform: scale(1.2);   /* 轻微放大，增强选中感 */
+  cursor: pointer;
+}
+
+/* 滚动条 */
 .main-content::-webkit-scrollbar {
   width: 4px;
 }
@@ -422,7 +481,6 @@ watch(
   background: rgba(0, 0, 0, 0.25);
 }
 
-/* Firefox */
 .main-content {
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
