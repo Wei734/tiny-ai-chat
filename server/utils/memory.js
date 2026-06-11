@@ -127,8 +127,8 @@ function scoreByKeywords(query, text) {
 function dynamicAllocation(messages, totalBudget) {
   const rounds = splitIntoRounds(messages);
   const MIN_RECENT_ROUNDS = 2;
-  const MAX_RECENT_ROUNDS = 10;
-  const RECENT_BUDGET_RATIO = 0.6;  // 最近部分最多占用 60%
+  const MAX_RECENT_ROUNDS = 50;        // 安全上限大幅提高，实际由 token 预算控制
+  const RECENT_BUDGET_RATIO = 0.6;     // 最近部分最多占用 60%
 
   let recentRounds = [];
   let recentTokens = 0;
@@ -140,7 +140,7 @@ function dynamicAllocation(messages, totalBudget) {
     recentTokens += roundTokens;
   }
 
-  // 2. 弹性扩展：在 60% 预算内，最多再加到 10 轮
+  // 2. 弹性扩展：在 60% 预算内，尽可能多地向前添加轮次
   const maxRecentBudget = totalBudget * RECENT_BUDGET_RATIO;
   for (let i = rounds.length - recentRounds.length - 1; i >= 0 && recentRounds.length < MAX_RECENT_ROUNDS; i--) {
     const roundTokens = countTokens(rounds[i]);
@@ -148,6 +148,7 @@ function dynamicAllocation(messages, totalBudget) {
       recentRounds.unshift(rounds[i]);
       recentTokens += roundTokens;
     } else {
+      // 预算不够装下下一整轮，停止扩展
       break;
     }
   }
