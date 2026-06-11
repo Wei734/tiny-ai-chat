@@ -36,6 +36,17 @@ function countTokens(messages) {
 }
 
 /**
+ * 估算纯文本的 token 数（与 countTokens 口径一致：1 token ≈ 3.5 字符）
+ * @param {string} text
+ * @returns {number}
+ */
+function estimateTextTokens(text) {
+  if (!text || typeof text !== 'string') return 0;
+  return Math.ceil(text.length / 3.5);
+}
+
+
+/**
  * 根据模型上下文限制或指定预算，保留最近若干轮完整对话
  * @param {Array} messages - 完整消息数组（含 system）
  * @param {string} model - 模型标识，如 'gpt-4o' 或 'openai/gpt-4o'，用于查表
@@ -110,4 +121,18 @@ function trimMessages(messages, model, maxTokens) {
   return result;
 }
 
-module.exports = { trimMessages, countTokens };
+/**
+ * 按 token 数近似截断文本（基于字符比例）
+ * @param {string} text
+ * @param {number} maxTokens - 最大 token 数
+ * @returns {string} 截断后的文本
+ */
+function truncateByTokens(text, maxTokens) {
+  if (maxTokens <= 0) return '';
+  const maxChars = Math.floor(maxTokens * 3.5);   // 与估算系数一致
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars);
+}
+
+// 导出新增函数
+module.exports = { trimMessages, countTokens, estimateTextTokens, truncateByTokens };
