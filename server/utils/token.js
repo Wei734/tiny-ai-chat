@@ -45,7 +45,6 @@ function estimateTextTokens(text) {
   return Math.ceil(text.length / 3.5);
 }
 
-
 /**
  * 根据模型上下文限制或指定预算，保留最近若干轮完整对话
  * @param {Array} messages - 完整消息数组（含 system）
@@ -134,5 +133,18 @@ function truncateByTokens(text, maxTokens) {
   return text.slice(0, maxChars);
 }
 
+/**
+ * 按 token 数近似截断文本，截断前面，保留末尾部分（最新内容）
+ * @param {string} text
+ * @param {number} maxTokens - 最大 token 数
+ * @returns {string} 截断后的文本，保留末尾
+ */
+function truncateByTokensFromEnd(text, maxTokens) {
+  if (maxTokens <= 0) return '';
+  const maxChars = Math.floor(maxTokens * 3.5);
+  if (text.length <= maxChars) return text;
+  return text.slice(-maxChars);  // 保留末尾
+}
+
 // 导出新增函数
-module.exports = { trimMessages, countTokens, estimateTextTokens, truncateByTokens };
+module.exports = { trimMessages, countTokens, estimateTextTokens, truncateByTokens, truncateByTokensFromEnd };

@@ -12,7 +12,7 @@ const { prepareLLMContext } = require('./utils/contextBuilder');
 const { addFact, searchFacts } = require('./utils/factsStore');
 const { retrieveMemories } = require('./utils/memory');
 const { systemPrompt } = require('./config/prompts');
-const { countTokens, truncateByTokens } = require('./utils/token');
+const { countTokens, truncateByTokensFromEnd } = require('./utils/token');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,26 +33,9 @@ const TOOL_EXECUTORS = {
     const thread = getThreadById(threadId);
     const allMessages = thread ? thread.messages : [];
 
-    console.log(`[recall] 开始搜索，预算: ${memoryBudget}，查询: [${queries.join(', ')}]`);
+    console.log(`[recall] 搜索原始对话历史，预算: ${memoryBudget}，查询: [${queries.join(', ')}]`);
 
-    // ─────────── 1. 搜索 AI 笔记 ───────────
-    let allFacts = [];
-    for (const q of queries) {
-      const results = await searchFacts(threadId, q, max_per_query);
-      allFacts.push(...results.map(f => ({ ...f, source: '笔记' })));
-    }
-
-    // 笔记去重
-    const uniqueFacts = [];
-    const seenFactIds = new Set();
-    for (const f of allFacts) {
-      if (!seenFactIds.has(f.id)) {
-        seenFactIds.add(f.id);
-        uniqueFacts.push(f);
-      }
-    }
-
-    // ─────────── 2. 搜索原始对话历史 ───────────
+    // ─────────── 1. 搜索原始对话历史 ───────────
     let allHistory = [];
 
     for (const q of queries) {
@@ -65,7 +48,7 @@ const TOOL_EXECUTORS = {
       })));
     }
 
-    // 历史去重（按消息 ID）
+    // ─────────── 2. 按消息id去重 ───────────
     const uniqueHistory = [];
     const seenMsgIds = new Set();
     for (const h of allHistory) {
@@ -77,48 +60,25 @@ const TOOL_EXECUTORS = {
 
     // ─────────── 3. 合并结果 ───────────
     let resultText = '';
-
     if (uniqueHistory.length > 0) {
-      resultText += '【来自对话历史】（优先采信）\n';
+      resultText += '【来自对话历史】（按时间从早到晚排列，最新的在末尾，请优先参考较新的内容）\n';
       resultText += uniqueHistory.map(h =>
         `- [${h.role === 'user' ? '用户' : '助手'}] ${h.content}`
       ).join('\n');
     }
-    if (uniqueFacts.length > 0) {
-      if (resultText) resultText += '\n\n';
-      resultText += '【来自我的笔记】\n';
-      resultText += uniqueFacts.map(f => `- ${f.content}`).join('\n');
-    }
     
-    const memoryTokensUsed = countTokens(resultText); // 合并结果的 token 数
-    const budget = memoryBudget;                      // 可用预算
-    let finalText = resultText;                       // 最终结果
-    let budgetExhausted = false;                      // 预算是否超出
-    if (memoryTokensUsed > budget) {
-      // 截断到预算以内，并预留出声明文本的 token 空间
+    // 预算截断（如果超限）
+    const usedTokens = countTokens(resultText);
+    let finalText = resultText;
+    if (usedTokens > memoryBudget) {
       const declaration = '\n\n【工具提示】记忆预算已用尽，以上结果为截断内容。';
-      const declarationTokens = countTokens(declaration);
-      const availableForContent = budget - declarationTokens;
-
-      if (availableForContent > 0) {
-          // 按 token 截断 resultText（需实现 truncateByTokens 辅助函数）
-          finalText = truncateByTokens(resultText, availableForContent) + declaration;
-      } else {
-          // 预算连声明都放不下，直接返回声明
-          finalText = declaration;
-      }
-      budgetExhausted = true;
-      console.log(`[recall] 预算 ${budget} 不够，已截断（原 ${memoryTokensUsed} tokens）。`);
+      const decTokens = countTokens(declaration);
+      const available = memoryBudget - decTokens;
+      finalText = (available > 0 ? truncateByTokensFromEnd(resultText, available) : '') + declaration;
     }
 
-    console.log(`[recall] 最终合并结果：笔记 ${uniqueFacts.length} 条 + 历史 ${uniqueHistory.length} 条`);
-    
-    if (!finalText) return '没有找到相关记忆。';
-
-    // 将消耗量存到 args 中，外部可以读取
-    args._memoryTokensUsed = countTokens(finalText);
-
-    return finalText;
+    args._memoryTokensUsed = countTokens(finalText);  // 将消耗量存到 args 中，外部可以读取
+    return finalText || '没有找到相关记忆。';
   }
 };
 
@@ -153,11 +113,10 @@ app.post('/api/chat', async (req, res) => {
     thread.updatedAt = new Date().toISOString();
 
     const fullContext = [...thread.messages];   // 完整历史（user与assitant）
-    console.log(`[线程状态] 线程ID: ${threadId}, 消息总数: ${fullContext.length}`);
 
     // ---------- 2. 构建初始请求数据 ----------
     const { messages: baseMessages, memoryBudget, system } =
-      await prepareLLMContext(provider, model, fullContext, systemPrompt);
+      await prepareLLMContext(provider, model, fullContext, systemPrompt, threadId);
 
     let remainingMemoryBudget = memoryBudget;   // 留给记忆注入的 token 额度
     let chatMessages = baseMessages;           // 当前要发给 API 的最近轮次
@@ -368,7 +327,7 @@ app.post('/api/chat', async (req, res) => {
         try {
           const vector = await embed(msg.content);
           addVector(msg.id, vector);
-          console.log(`已为消息 ${msg.id} 生成向量`);
+          //console.log(`已为消息 ${msg.id} 生成向量`);
         } catch (err) {
           console.error(`向量化失败: ${msg.id}`, err.message);
         }

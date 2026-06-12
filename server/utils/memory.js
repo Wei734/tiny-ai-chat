@@ -185,21 +185,22 @@ async function retrieveMemories(query, oldMessages, maxTokens) {
   // 1. 生成查询向量
   const queryVector = await embed(query);
 
-  // 2. 为每条消息打分（有向量的消息用余弦相似度，无向量的跳过）
+  // 2. 为每条消息打分，过滤不相关
   const scored = [];
   for (const msg of oldMessages) {
     if (!msg.id) continue;
     const vec = getVector(msg.id);
-    if (!vec) continue; // 还没有向量的消息（比如迁移前的老消息）
+    if (!vec) continue;
     const score = cosineSimilarity(queryVector, vec);
-    if (score < 0.2) continue; // 可调阈值：低于 0.2 视为不相关
+    if (score < 0.2) continue;
     scored.push({ msg, score });
   }
 
-  // 3. 按相似度降序排序
-  scored.sort((a, b) => b.score - a.score);
+  // 3. 按时间降序排列（最新的在前）
+  // 假设 oldMessages 本身按时间升序，索引越大越新
+  scored.sort((a, b) => oldMessages.indexOf(b.msg) - oldMessages.indexOf(a.msg));
 
-  // 4. 按 token 预算截取
+  // 4. 按 token 预算截取（从最新开始向前拿）
   const selected = [];
   let usedTokens = 0;
   for (const item of scored) {
@@ -209,7 +210,7 @@ async function retrieveMemories(query, oldMessages, maxTokens) {
     usedTokens += msgTokens;
   }
 
-  // 5. 按原始时间顺序排列（便于模型理解时间线）
+  // 5. 恢复为时间升序，便于模型按时间线阅读
   selected.sort((a, b) => oldMessages.indexOf(a) - oldMessages.indexOf(b));
 
   return selected;

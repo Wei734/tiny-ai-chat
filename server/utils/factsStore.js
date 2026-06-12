@@ -29,6 +29,19 @@ function readFacts(threadId) {
 }
 
 /**
+ * 获取线程中所有事实的纯文本数组（最近修改的在前），用于全量注入系统提示词。
+ * @param {number|string} threadId
+ * @returns {string[]} 事实内容数组（仅content）
+ */
+function getFactsForInjection(threadId) {
+  const facts = readFacts(threadId);
+  // 按最近修改时间降序排列（假设有 createdAt 字段，或使用 updatedAt）
+  facts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  return facts.map(f => f.content); // 只提取 content 字段
+}
+
+/**
  * 写入一个线程的事实记忆
  * @param {number|string} threadId
  * @param {Array} facts
@@ -97,4 +110,16 @@ function cosineSimilarity(vecA, vecB) {
   return denom === 0 ? 0 : dot / denom;
 }
 
-module.exports = { addFact, searchFacts };
+/**
+ * 删除某个线程的所有事实记忆
+ * @param {number|string} threadId
+ */
+function deleteFacts(threadId) {
+  const filePath = getFactsFilePath(threadId);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    console.log(`[facts] 已删除线程 ${threadId} 的记忆文件`);
+  }
+}
+
+module.exports = { addFact, searchFacts, deleteFacts, getFactsForInjection };

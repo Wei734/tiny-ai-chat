@@ -1,6 +1,7 @@
 // server/routes/threads.js
 const { readThreads, writeThreads } = require('../utils/storage');
 const { deleteVector } = require('../utils/vectorStore');
+const { deleteFacts } = require('../utils/factsStore');  // 路径按实际调整
 
 module.exports = function(app) {
     // ========== 线程管理 API ==========
@@ -62,6 +63,9 @@ module.exports = function(app) {
             // 删除对话并写回
             const filtered = threads.filter(t => t.id != threadId);
             writeThreads(filtered);
+
+            // ✅ 新增：清理该会话的 AI 记忆文件
+            deleteFacts(threadId);
 
             res.json({ success: true, deleted: threadId });
         } catch (e) {
