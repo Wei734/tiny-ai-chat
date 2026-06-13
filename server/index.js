@@ -13,6 +13,7 @@ const { addFact, searchFacts } = require('./utils/factsStore');
 const { retrieveMemories } = require('./utils/memory');
 const { systemPrompt } = require('./config/prompts');
 const { countTokens, truncateByTokensFromEnd } = require('./utils/token');
+const { cleanMessagesForAPI } = require('./utils/helpers');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -158,7 +159,7 @@ app.post('/api/chat', async (req, res) => {
         },
         data: {
           model: model,
-          messages: chatMessages,
+          messages: cleanMessagesForAPI(chatMessages),
           stream: true,
           ...(provider.type === 'anthropic' && { system })
         },
