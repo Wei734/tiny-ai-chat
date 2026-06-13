@@ -192,7 +192,7 @@ async function retrieveMemories(query, oldMessages, maxTokens) {
     const vec = getVector(msg.id);
     if (!vec) continue;
     const score = cosineSimilarity(queryVector, vec);
-    if (score < 0.2) continue;
+    if (score < 0.4) continue;
     scored.push({ msg, score });
   }
 

@@ -29,9 +29,13 @@ const TOOL_EXECUTORS = {
   },
 
   recall: async (args, threadId) => {
-    const { queries, max_per_query = 2, memoryBudget } = args;
+    const { queries, memoryBudget, recentMsgIds } = args;
     const thread = getThreadById(threadId);
     const allMessages = thread ? thread.messages : [];
+
+    // 用传入的 ID 集合排除最近消息
+    const excludeIds = new Set(recentMsgIds || []);
+    const oldMessages = allMessages.filter(m => !excludeIds.has(m.id));
 
     console.log(`[recall] 搜索原始对话历史，预算: ${memoryBudget}，查询: [${queries.join(', ')}]`);
 
@@ -39,7 +43,7 @@ const TOOL_EXECUTORS = {
     let allHistory = [];
 
     for (const q of queries) {
-      const historyMsgs = await retrieveMemories(q, allMessages, memoryBudget);
+      const historyMsgs = await retrieveMemories(q, oldMessages, memoryBudget);
       allHistory.push(...historyMsgs.map(m => ({
         id: m.id,
         content: m.content,
@@ -56,6 +60,15 @@ const TOOL_EXECUTORS = {
         seenMsgIds.add(h.id);
         uniqueHistory.push(h);
       }
+    }
+
+    // ─────────── 调试日志：打印搜索到的消息摘要 ───────────
+    if (uniqueHistory.length > 0) {
+      console.log('[recall] 搜索到的消息摘要:');
+      uniqueHistory.forEach(h => {
+          const preview = h.content.length > 30 ? h.content.slice(0, 30) + '…' : h.content;
+          console.log(`  - [${h.role}] ${preview}`);
+      });
     }
 
     // ─────────── 3. 合并结果 ───────────
@@ -271,6 +284,10 @@ app.post('/api/chat', async (req, res) => {
 
         if (toolObj.tool === 'recall') {
           toolObj.args.memoryBudget = remainingMemoryBudget;
+          // 传入当前可见的最近消息 ID 列表，用于排除
+          toolObj.args.recentMsgIds = baseMessages
+              .filter(m => m.id)                    // 只取有 id 的消息
+              .map(m => m.id);
         }        
         const toolResult = await TOOL_EXECUTORS[toolObj.tool](toolObj.args, threadId);
 

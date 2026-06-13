@@ -14,7 +14,7 @@ const { getFactsForInjection } = require('./factsStore')
  * @param {Array<{role: string, content: string}>} messages - 完整的对话消息数组（不含 system 角色）
  * @param {string} systemPrompt - 基础系统提示词，将在内部可能被扩展（如添加位置元信息）
  * @returns {Promise<Object>} 返回一个对象，包含以下字段：
- *   - messages: 最近消息，非 Anthropic 厂商会在最前面包含系统消息（role = system）
+ *   - messages: 最近消息（role，content，id），非 Anthropic 厂商会在最前面包含系统消息（role = system）
  *   - memoryBudget: 分配给记忆检索的 token 预算
  *   - system: 单独的系统提示词字符串(仅 Anthropic) 
  */
@@ -31,12 +31,13 @@ async function prepareLLMContext(provider, model, messages, systemPrompt, thread
 
   // ---------- 新增：注入笔记本 ----------
   const facts = getFactsForInjection(threadId);
+
   if (facts.length > 0) {
-    let noteSection = '\n\n【你的永久笔记本】\n';
+    let noteSection = '\n\n【永久笔记本】\n';
     let used = estimateTextTokens(noteSection);
     const includedFacts = [];
     for (const fact of facts) {
-      const line = `- ${fact.content}`;
+      const line =  `- ${fact}`; 
       const lineTokens = estimateTextTokens(line);
       if (used + lineTokens > MAX_NOTE_TOKENS) break;
       includedFacts.push(line);
@@ -101,14 +102,14 @@ async function prepareLLMContext(provider, model, messages, systemPrompt, thread
   if (provider.type === 'anthropic') {
     return {
       system: finalSystemPrompt,
-      messages: cleanMessagesForAPI(recentMessages),   // recentMessages 不含 system
+      messages: recentMessages,   // recentMessages 不含 system
       memoryBudget,
     };
   }
 
   // 非 Anthropic：将 system 消息拼入 messages 数组
   return {
-    messages: cleanMessagesForAPI([systemMsg, ...recentMessages]),
+    messages: [systemMsg, ...recentMessages],
     memoryBudget,
   };
 }
