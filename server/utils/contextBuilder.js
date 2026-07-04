@@ -19,7 +19,7 @@ const { getFactsForInjection } = require('./factsStore')
  *   - system: 单独的系统提示词字符串(仅 Anthropic) 
  */
 async function prepareLLMContext(provider, model, messages, systemPrompt, threadId) {
-  const MAX_WINDOW = 10000;//MODEL_LIMITS[model] || MODEL_LIMITS.default;
+  const MAX_WINDOW = MODEL_LIMITS[model] || MODEL_LIMITS.default;
   const MEMORY_THRESHOLD = MAX_WINDOW * 0.5;
   const MAX_NOTE_TOKENS = MAX_WINDOW * 0.1;
   const RESERVED_OUTPUT = 4000;

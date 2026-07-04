@@ -4,8 +4,9 @@ client/node_modules/
 server/node_modules/
 
 # 环境变量（如果包含敏感信息）
+*.env
 .env
-.env.local
+server/.env
 
 # 日志
 *.log
@@ -20,3 +21,6 @@ build/
 
 # 对话数据
 server/data/
+
+# 和软件运行无关的其他文件但包含敏感信息
+server/add-domain.js
